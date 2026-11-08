@@ -649,8 +649,9 @@ struct Values {
         linkage, false, "use_graphics_pipeline_library", Category::RendererAdvanced};
 
     // Large shader functions called from several places are built as calls instead of being
-    // copied into every caller (much faster driver compiles). EDEN_NX2_COMPUTE_NOINLINE=0 and
-    // EDEN_NX2_GRAPHICS_NOINLINE=0 still override.
+    // copied into every caller (much faster driver compiles). Compute only:
+    // EDEN_NX2_COMPUTE_NOINLINE=0 still overrides, and graphics stages need
+    // EDEN_NX2_GRAPHICS_NOINLINE=1 (DontInline there miscompiles on NVIDIA 580.x).
     SwitchableSetting<bool> shader_calls_not_inlined{linkage, true, "shader_calls_not_inlined",
                                                      Category::RendererAdvanced};
 
