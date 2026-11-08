@@ -549,6 +549,9 @@ void GpuSplit::BackLoop(std::stop_token stop_token) {
         u64 last_store = read_position;
         // Before any entry runs, so a front that sees these entries consumed also sees this.
         back_quiet.store(false, std::memory_order_seq_cst);
+        // One profile scope per batch: zones the entries open (draws, binds, ...) are subtracted,
+        // so `method` stays the time spent processing methods, without two clock reads each.
+        Nx2Profile::Scope method_scope{Nx2Profile::Zone::Method};
         while (read_position != available) {
             const size_t index = read_position & RingMask;
             const size_t size =
