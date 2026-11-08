@@ -394,17 +394,17 @@ void AddRuntimeSpirvTime(size_t thread, std::chrono::steady_clock::time_point be
         std::memory_order::relaxed);
 }
 
-// EDEN_NX2_GRAPHICS_NOINLINE=0 turns it off: graphics modules are then built from the SPIR-V
-// exactly as emitted. On by default: functions a graphics stage calls from several places (the
-// global memory functions of native programs) are built as calls instead of being inlined at
-// each call site, as for compute (EDEN_NX2_COMPUTE_NOINLINE, video_core/spirv_inline_control.h).
+// EDEN_NX2_GRAPHICS_NOINLINE=1 builds functions a graphics stage calls from several places (the
+// global memory functions of native programs) as calls instead of inlining them at each call
+// site, as for compute (EDEN_NX2_COMPUTE_NOINLINE, video_core/spirv_inline_control.h). Off by
+// default: DontInline in graphics stages miscompiles on NVIDIA 580.x (0539da5d66, far hills
+// drawn as sky), so shader_calls_not_inlined only applies to compute.
 bool GraphicsNoInline() {
-    // The environment variable wins over the setting (shader_calls_not_inlined).
-    static const int forced = [] {
+    static const bool enabled = [] {
         const char* value = std::getenv("EDEN_NX2_GRAPHICS_NOINLINE");
-        return value == nullptr || *value == '\0' ? -1 : (value[0] == '0' ? 0 : 1);
+        return value != nullptr && value[0] == '1';
     }();
-    return forced >= 0 ? forced == 1 : Settings::values.shader_calls_not_inlined.GetValue();
+    return enabled;
 }
 
 vk::ShaderModule EmitShaderModule(const Device& device, const Shader::Profile& profile,
