@@ -509,7 +509,22 @@ namespace {
 // only kept every pipeline the title ever built in host memory (title 1: a 245 MB file, ~0.35 GB
 // of RAM for the session) and copied it whole at each save, which stalled frames; pipelines built
 // no slower without it.
+// EDEN_NX2_APP_PIPELINE_CACHE=1 keeps our copy on those drivers too. NVIDIA's own cache is per
+// executable, so every new emulator build compiles the shader warm-up again; our copy is keyed by
+// the driver and the device only, so the next build reuses it.
 bool DriverCachesPipelines(const Device& device) {
+    static const bool app_cache_forced = [] {
+        const char* value = std::getenv("EDEN_NX2_APP_PIPELINE_CACHE");
+        const bool forced = value != nullptr && value[0] == '1';
+        if (forced) {
+            LOG_INFO(Render_Vulkan, "EDEN_NX2_APP_PIPELINE_CACHE: driver pipeline cache kept on "
+                                    "disk by the emulator");
+        }
+        return forced;
+    }();
+    if (app_cache_forced) {
+        return false;
+    }
     switch (device.GetDriverID()) {
     case VK_DRIVER_ID_NVIDIA_PROPRIETARY:
     case VK_DRIVER_ID_AMD_PROPRIETARY:
@@ -1365,8 +1380,13 @@ std::optional<WarmStamp> CurrentStamp(const std::filesystem::path& file, const D
         return std::nullopt;
     }
     const u32 no_inline = (ComputeNoInline() ? 1U : 0U) | (GraphicsNoInline() ? 2U : 0U);
-    const u32 link_mode =
-        (device.CanFastLinkGraphicsLibraries() ? 1U : 0U) | (GplOptimizeEnabled() ? 2U : 0U);
+    // Bit 4: the builds also went into our own pipeline cache file, which outlives this executable
+    // (EDEN_NX2_APP_PIPELINE_CACHE). A warm-up done without it is redone once with it.
+    const bool app_pipeline_cache =
+        Settings::values.use_vulkan_driver_pipeline_cache.GetValue() &&
+        !DriverCachesPipelines(device);
+    const u32 link_mode = (device.CanFastLinkGraphicsLibraries() ? 1U : 0U) |
+                          (GplOptimizeEnabled() ? 2U : 0U) | (app_pipeline_cache ? 4U : 0U);
     return WarmStamp{size,
                      static_cast<s64>(time.time_since_epoch().count()),
                      entries,
