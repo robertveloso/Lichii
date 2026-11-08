@@ -27,7 +27,6 @@
 #include "common/fs/path_util.h"
 #include "common/memory_detect.h"
 #include "common/thread.h"
-)
 #include "common/thread_worker.h"
 #include "core/core.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
