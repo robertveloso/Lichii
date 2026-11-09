@@ -629,21 +629,11 @@ void DmaPusher::RefreshDeferredEntries(CommandList& list) {
 
 bool DmaPusher::WaitForListWriters(GPUVAddr address, size_t size) {
     auto& split = VideoCommon::GpuSplit::Get();
-    // EDEN_NX2_LIST_WAIT_SYNC=1 (A/B test): the host fetches command lists ahead of the engines,
-    // so a game that has the GPU write commands it runs next puts a host sync between them (a
-    // semaphore acquire, a host wait for idle, a GP entry's sync bit; NoteSync). Wait for the work
-    // sent before the last one instead of every dispatch and copy sent so far.
-    static const bool sync_only = [] {
-        const char* value = std::getenv("EDEN_NX2_LIST_WAIT_SYNC");
-        const bool on = value != nullptr && value[0] == '1';
-        if (on) {
-            LOG_INFO(HW_GPU, "EDEN_NX2_LIST_WAIT_SYNC: command lists wait for the last host sync");
-        }
-        return on;
-    }();
-    if (!sync_only) {
-        return split.WaitForWriters() && IsGpuWrittenCommands(address, size);
-    }
+    // The host fetches command lists ahead of the engines, so a game that has the GPU write the
+    // commands it runs next puts a host sync between them (a semaphore acquire, a host wait for
+    // idle, a GP entry's sync bit; NoteSync). Only the work sent before the last one can have
+    // written commands read now, not every dispatch and copy sent so far (Ocarina of Time fights:
+    // ~5,000 waits a second, 160-540 ms of the front's time).
     bool written = split.WaitForSync() && IsGpuWrittenCommands(address, size);
     if (!written && VideoCommon::Nx2Perf::Verify() && split.WaitForWriters() &&
         IsGpuWrittenCommands(address, size)) {
