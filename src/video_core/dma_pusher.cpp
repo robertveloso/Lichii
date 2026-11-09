@@ -18,6 +18,7 @@
 #include "core/memory.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/dma_pusher.h"
+#include "video_core/nx2_perf.h"
 #include "video_core/command_fetch_order.h"
 #include "video_core/control/channel_state.h"
 #include "video_core/engines/kepler_compute.h"
@@ -219,10 +220,8 @@ bool DmaPusher::Step() {
         // (the split only starts with unsafe reads; the settings can change mid-game).
         const bool use_safe = !VideoCommon::GpuSplit::Get().Active() &&
                               (Settings::IsDMALevelDefault() ? Settings::IsGPULevelHigh() : Settings::IsDMALevelSafe());
-        if (!gpu_written && VideoCommon::GpuSplit::Get().Active() &&
-            VideoCommon::GpuSplit::Get().WaitForWriters()) {
-            gpu_written =
-                IsGpuWrittenCommands(dma_state.dma_get, size_t{header.size} * sizeof(u32));
+        if (!gpu_written && VideoCommon::GpuSplit::Get().Active()) {
+            gpu_written = WaitForListWriters(dma_state.dma_get, size_t{header.size} * sizeof(u32));
         }
         // Resume and GPU-written entries need live words, even after a flush cleared dirty state.
         const bool submitted = (command_list.snapshot_suspensions & 1) == 0 &&
@@ -626,6 +625,40 @@ void DmaPusher::RefreshDeferredEntries(CommandList& list) {
                                        entry.size * sizeof(u32));
     }
     list.deferred_entries.clear();
+}
+
+bool DmaPusher::WaitForListWriters(GPUVAddr address, size_t size) {
+    auto& split = VideoCommon::GpuSplit::Get();
+    // EDEN_NX2_LIST_WAIT_SYNC=1 (A/B test): the host fetches command lists ahead of the engines,
+    // so a game that has the GPU write commands it runs next puts a host sync between them (a
+    // semaphore acquire, a host wait for idle, a GP entry's sync bit; NoteSync). Wait for the work
+    // sent before the last one instead of every dispatch and copy sent so far.
+    static const bool sync_only = [] {
+        const char* value = std::getenv("EDEN_NX2_LIST_WAIT_SYNC");
+        const bool on = value != nullptr && value[0] == '1';
+        if (on) {
+            LOG_INFO(HW_GPU, "EDEN_NX2_LIST_WAIT_SYNC: command lists wait for the last host sync");
+        }
+        return on;
+    }();
+    if (!sync_only) {
+        return split.WaitForWriters() && IsGpuWrittenCommands(address, size);
+    }
+    bool written = split.WaitForSync() && IsGpuWrittenCommands(address, size);
+    if (!written && VideoCommon::Nx2Perf::Verify() && split.WaitForWriters() &&
+        IsGpuWrittenCommands(address, size)) {
+        // Work after the last host sync wrote these commands: waiting for the sync only would
+        // have run what the CPU submitted instead.
+        static std::atomic<u32> reports{};
+        if (reports.fetch_add(1, std::memory_order_relaxed) < 32) {
+            LOG_ERROR(HW_GPU,
+                      "Nx2Perf list wait: commands at {:#x} ({} bytes) were written by work after "
+                      "the last host sync",
+                      address, size);
+        }
+        written = true;
+    }
+    return written;
 }
 
 bool DmaPusher::IsGpuWrittenCommands(GPUVAddr address, size_t size) {
