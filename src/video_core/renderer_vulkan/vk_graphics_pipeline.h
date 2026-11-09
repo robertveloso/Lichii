@@ -370,6 +370,9 @@ public:
     u32 hold_target_height{};
     bool hold_target_color{};
     std::chrono::steady_clock::time_point heavy_skip_begin{};
+    /// Whether an image the kept views sample has an upload pending or a newer alias to copy in:
+    /// ConfigureDelta prepares none, Configure does.
+    [[nodiscard]] bool DeltaImagesChange() const noexcept;
 
     template <typename Spec>
     static auto MakeConfigureSpecFunc() {

@@ -2035,7 +2035,7 @@ void PipelineCache::TickFrame() {
 
 void PipelineCache::EvictUnusedPipelines() {
     // Building a pipeline again on MoltenVK means a Metal compile mid-game, far dearer than the
-    // 2-3 ms below, so none are evicted there.
+    // rebuild cost below, so none are evicted there.
     if (device.IsMoltenVK()) {
         return;
     }
